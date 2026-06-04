@@ -16,8 +16,8 @@ from pydantic import BaseModel
 app = FastAPI()
 
 # Cloud Infrastructure Configurations
-SUPABASE_URL = "https://nkkprmkdnxcsstczttmz.supabase.co"
-SUPABASE_KEY = "sb_publishable_ehPr5Yj3TQuFpFRJshIbmQ_lnIGzsbS"  # Replace if needed
+SUPABASE_URL = "https://ogzbriarrrmzhezapqsu.supabase.co"
+SUPABASE_KEY = "sb_publishable_vXVTsccqBUhHphJzYylKhg_D3nswnlr"  # Replace if needed
 MY_GEMINI_API_KEY = "AIzaSyDEMMScWI1e-Gd8qhILWGaTPif_dlUGWqw"   # Replace if needed
 
 # Initialize AI Client only
