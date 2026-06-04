@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UPSC Cumulative Question Segregator</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 650px; margin: 40px auto; padding: 20px; background-color: #f3f4f6; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        h2 { color: #1e3a8a; margin-top: 0; }
+        .btn { background: #1e40af; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; margin-top: 10px; }
+        .btn:hover { background: #1d4ed8; }
+        .upload-box { border: 3px dashed #2563eb; padding: 40px; text-align: center; border-radius: 8px; background: #eff6ff; cursor: pointer; margin-top: 20px; }
+        .status { margin-top: 20px; padding: 15px; border-radius: 6px; font-weight: bold; display: none; }
+        .info { background: #e0f2fe; color: #0369a1; }
+        .success { background: #dcfce7; color: #15803d; }
+        .error { background: #fee2e2; color: #b91c1c; }
+        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #0369a1; border-radius: 50%; border-top-color: transparent; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="card" id="mainWorkspace">
+        <h2>Study-Guide Workspace</h2>
+        <p>Upload exam papers. Small data fragments prevent timeouts and network drops.</p>
+        
+        <form id="uploadForm">
+            <div class="upload-box" onclick="document.getElementById('fileInput').click()">
+                <p style="font-size: 16px; margin: 0; font-weight: 500;">Drag & Drop files here or click to browse</p>
+                <input type="file" id="fileInput" name="files" accept=".pdf,.docx,.jpg,.jpeg,.png" multiple style="display:none;" required>
+                <div id="fileCount" style="color: #2563eb; margin-top: 12px; font-weight: bold;"></div>
+            </div>
+            <button type="submit" id="processBtn" class="btn">Process Batch</button>
+        </form>
+        <div class="status" id="statusMessage"></div>
+        <div style="margin-top:25px; border-top:2px solid #e5e7eb; padding-top:20px;">
+            <button class="btn" style="background: #10b981;" id="downloadBtn" onclick="triggerDownload()">Download Topic-Wise Excel Study Guides</button>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const fileCount = document.getElementById('fileCount');
+        const status = document.getElementById('statusMessage');
+        const processBtn = document.getElementById('processBtn');
+
+        fileInput.addEventListener('change', () => {
+            fileCount.innerText = `📁 ${fileInput.files.length} file(s) loaded.`;
+        });
+
+        async function uploadFileInChunks(file) {
+            const chunkSize = 1024 * 1024; 
+            const totalChunks = Math.ceil(file.size / chunkSize);
+            const uploadId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+            for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                const start = chunkIndex * chunkSize;
+                const end = Math.min(start + chunkSize, file.size);
+                const chunk = file.slice(start, end);
+
+                const formData = new FormData();
+                formData.append('chunk', chunk);
+                formData.append('filename', file.name);
+                formData.append('upload_id', uploadId);
+                formData.append('chunk_index', chunkIndex);
+                formData.append('total_chunks', totalChunks);
+
+                let attempt = 0;
+                let success = false;
+                while (attempt < 3 && !success) {
+                    try {
+                        let res = await fetch('/upload-chunk', { method: 'POST', body: formData });
+                        if (res.ok) { success = true; } else { attempt++; }
+                    } catch (err) { attempt++; }
+                }
+                if (!success) return false;
+            }
+            return true;
+        }
+
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            status.style.display = "block";
+            status.className = "status info";
+            status.innerHTML = `<div class="spinner"></div>Streaming documents to backend in safe fragments...`;
+            processBtn.disabled = true;
+
+            const processedFiles = [];
+            for (let file of fileInput.files) {
+                status.innerHTML = `<div class="spinner"></div>Streaming: ${file.name}...`;
+                let uploadSuccess = await uploadFileInChunks(file);
+                if (uploadSuccess) {
+                    processedFiles.push(file.name);
+                } else {
+                    status.className = "status error";
+                    status.innerText = `❌ Connection drop during fragment transmission of ${file.name}.`;
+                    processBtn.disabled = false;
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch('/process-fragments', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filenames: processedFiles }) 
+                });
+                
+                if (response.ok) {
+                    status.className = "status success";
+                    status.innerHTML = `⚙️ Files compiled perfectly! Cloud AI has started processing.<br>Please wait 20-30 seconds, then click the download button below.`;
+                    fileInput.value = ""; 
+                    fileCount.innerText = "";
+                } else {
+                    status.className = "status error";
+                    status.innerHTML = `❌ Error starting classification engine.`;
+                }
+            } catch (err) {
+                status.className = "status error";
+                status.innerText = "❌ Connection reference lost.";
+            } finally {
+                processBtn.disabled = false;
+            }
+        });
+
+        async function triggerDownload() {
+            status.style.display = "block";
+            status.className = "status info";
+            status.innerHTML = `<div class="spinner"></div>Downloading ZIP package containing your topic files...`;
+            
+            try {
+                const response = await fetch('/download');
+                if (!response.ok) {
+                    status.className = "status error";
+                    status.innerText = "❌ Download failed. Your files might still be processing. Give it 10 more seconds.";
+                    return;
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "UPSC_Topic_Wise_Study_Guides.zip";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                
+                status.className = "status success";
+                status.innerText = "🎉 now you can download";
+            } catch (err) {
+                status.className = "status error";
+                status.innerText = "❌ Local download construction failure.";
+            }
+        }
+    </script>
+</body>
+</html>
